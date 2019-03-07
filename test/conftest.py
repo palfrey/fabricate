@@ -17,7 +17,7 @@ from _pytest.monkeypatch import MonkeyPatch
 
 __all__ = [ 'runner_list', 'assert_same_json', 'assert_json_equality', 'FabricateBuild']
 
-possible_runner_list = [StraceRunner, AtimesRunner]
+possible_runner_list = [StraceRunner, AtimesRunner, DtrussRunner]
 runner_list = []
 temp_dir = tempfile.mkdtemp()
 for r in possible_runner_list:

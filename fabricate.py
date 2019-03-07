@@ -68,7 +68,7 @@ __all__ = ['setup', 'run', 'autoclean', 'main', 'shell', 'fabricate_version',
            'memoize', 'outofdate', 'parse_options', 'after',
            'ExecutionError', 'md5_hasher', 'mtime_hasher',
            'Runner', 'AtimesRunner', 'StraceRunner', 'AlwaysRunner',
-           'SmartRunner', 'Builder']
+           'SmartRunner', 'Builder', 'DtrussRunner']
 
 import textwrap
 
@@ -775,6 +775,58 @@ class StraceRunner(Runner):
                                  % (os.path.basename(args[0]), status),
                                  '', status)
         return list(deps), list(outputs)
+
+class DtrussRunner(StraceRunner):
+    keep_temps = False
+
+    def __init__(self, builder, build_dir=None):
+        if not DtrussRunner.dtruss_installed():
+            raise RunnerUnsupportedException("dtruss not available on this system")
+        self._builder = builder
+        self.temp_count = 0
+        self.build_dir = os.path.abspath(build_dir or os.getcwd())
+
+    @staticmethod
+    def dtruss_installed():
+        proc = subprocess.Popen(['sudo', 'dtruss', '/bin/ls'], stderr=subprocess.PIPE)
+        stdout, stderr = proc.communicate()
+        proc.wait()
+        return stderr.find("open(\"/dev/dtracehelper") != -1
+
+    def _do_strace(self, args, kwargs, outfile, outname):
+        """ Run dtruss on given command args/kwargs, sending output to file.
+            Return (status code, list of dependencies, list of outputs). """
+        shell_keywords = dict(silent=False)
+        shell_keywords.update(kwargs)
+        try:
+            shell('sudo', 'dtruss',
+                  args, **shell_keywords)
+        except ExecutionError as e:
+            # if strace failed to run, re-throw the exception
+            # we can tell this happend if the file is empty
+            outfile.seek(0, os.SEEK_END)
+            print(e)
+            if outfile.tell() is 0:
+                raise e
+            else:
+                # reset the file postion for reading
+                outfile.seek(0)
+
+        self.status = 0
+        processes  = {}  # dictionary of processes (key = pid)
+        unfinished = {}  # list of interrupted entries in strace log
+        raise Exception(outfile)
+        for line in outfile:
+           self._match_line(line, processes, unfinished)
+
+        # collect outputs and dependencies from all processes
+        deps = set()
+        outputs = set()
+        for pid, process in processes.items():
+            deps = deps.union(process.deps)
+            outputs = outputs.union(process.outputs)
+
+        return self.status, list(deps), list(outputs)
 
 class AlwaysRunner(Runner):
     def __init__(self, builder):
